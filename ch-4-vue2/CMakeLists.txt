@@ -25,20 +25,12 @@ function(webpack2qrc inFile outFile prefix)
     ${Python_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/webpackmanifest2qrc.py --prefix=${prefix} --input=${inFile} --output=${outFile}
   )
 endfunction()
-# function(add_rcc_resources inFile targetName)
-#   add_custom_target(${targetName} ALL
-#     COMMAND ${Qt5Core_RCC_EXECUTABLE} -no-compress --binary --name "resources" --output $<TARGET_FILE_DIR:${PROJECT_NAME}>/${targetName}.rcc ${inFile}
-#     DEPENDS
-#     ${inFile}
-#   )
-#   add_dependencies(${PROJECT_NAME} ${targetName})
-# endfunction()
 webpack2qrc(
   ${CMAKE_CURRENT_LIST_DIR}/web/dist/asset-manifest.json 
   ${CMAKE_CURRENT_LIST_DIR}/web/dist/web.qrc
   "/web"
 )
-# add_rcc_resources(${CMAKE_SOURCE_DIR}/web/dist/web.qrc web)
+
 add_executable(${PROJECT_NAME} WIN32
     ${CMAKE_CURRENT_LIST_DIR}/main.cc
     ${CMAKE_CURRENT_LIST_DIR}/web/dist/web.qrc
