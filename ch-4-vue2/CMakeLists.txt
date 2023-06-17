@@ -1,7 +1,6 @@
-cmake_minimum_required(VERSION 3.12.0)
+cmake_minimum_required(VERSION 3.19.0)
 project(task01)
 set(USE_SANDBOX OFF CACHE BOOL "")
-# CEF_ROOT修改为CEF的cmake文件夹所在路径
 set(CEF_ROOT "H:/cef-test/cef_binary_100.0.24+g0783cf8+chromium-100.0.4896.127_windows64" CACHE PATH "") 
 set(CEF_RUNTIME_LIBRARY_FLAG "/MD" CACHE STRING "CEF_RUNTIME_LIBRARY_FLAG")
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
@@ -9,10 +8,31 @@ find_package(CEF REQUIRED)
 add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
 ADD_LOGICAL_TARGET("libcef_lib" "${CEF_LIB_RELEASE}" "${CEF_LIB_RELEASE}")
 PRINT_CEF_CONFIG()
+set(Python_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/../Python3.7.9)
+find_package (Python REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(USE_SANDBOX OFF CACHE BOOL "")
+function(webpack2qrc inFile outFile prefix)
+  add_custom_command(
+    OUTPUT 
+    ${outFile}
+    DEPENDS 
+    ${inFile}
+    ${Python_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/webpackmanifest2qrc.py
+    COMMAND 
+    ${Python_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/webpackmanifest2qrc.py --prefix=${prefix} --input=${inFile} --output=${outFile}
+  )
+endfunction()
+webpack2qrc(
+  ${CMAKE_CURRENT_LIST_DIR}/web/dist/asset-manifest.json 
+  ${CMAKE_CURRENT_LIST_DIR}/web/dist/web.qrc
+  "/web"
+)
 add_executable(${PROJECT_NAME} WIN32
     ${CMAKE_CURRENT_LIST_DIR}/main.cc
+    ${CMAKE_CURRENT_LIST_DIR}/web/dist/web.qrc
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC Qt5::Core)
 target_link_libraries(${PROJECT_NAME} PUBLIC Qt5::Gui)
@@ -29,4 +49,4 @@ add_custom_target(POST_COPY ALL
 COPY_FILES("${PROJECT_NAME}" "${CEF_BINARY_FILES}" "${CEF_BINARY_DIR_RELEASE}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
 COPY_FILES("${PROJECT_NAME}" "${CEF_RESOURCE_FILES}" "${CEF_RESOURCE_DIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
 target_compile_options(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>")  
-target_compile_options(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:utf-8>")
+target_compile_options(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:utf-8>") 

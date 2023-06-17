@@ -8,17 +8,17 @@
 #include <QDockWidget>
 #include <mutex>
 #include <condition_variable>
-#include <chrono>
+#include <QFile>
+#include <QMimeDatabase>
 static std::mutex browserCountMutex;
 static std::condition_variable browserCountCv;
 static int browserCount = 0;
-
 class BrowserHandler : public QObject,
                        public CefClient,
                        public CefKeyboardHandler,
                        public CefLifeSpanHandler {
     Q_OBJECT
-    void OnAfterCreated(CefRefPtr<CefBrowser> browser_) {
+    void OnAfterCreated(CefRefPtr<CefBrowser> browser_) override {
         if (this->browser == nullptr) {
             this->browser = browser_;
             HWND hwnd_ = this->browser->GetHost()->GetWindowHandle();
@@ -27,6 +27,13 @@ class BrowserHandler : public QObject,
                                SWP_NOZORDER);
             }
         }
+        std::unique_lock<std::mutex> locker(browserCountMutex);
+        browserCount += 1;
+    }
+    void OnBeforeClose(CefRefPtr<CefBrowser> browser_) override {
+        std::unique_lock<std::mutex> locker(browserCountMutex);
+        browserCount -= 1;
+        browserCountCv.notify_one();
     }
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
     CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
@@ -76,56 +83,7 @@ class QCefWidget : public QWidget {
         CefWindowInfo window_info;
         CefRect winRect(0, 0, this->width(), this->height());
         window_info.SetAsChild((HWND) this->winId(), winRect);
-        const std::string url = "http://www.baidu.com";
-        this->client = new BrowserHandler;
-        CefBrowserHost::CreateBrowser(window_info, this->client, CefString(url), browser_settings,
-                                      nullptr, CefRequestContext::GetGlobalContext());
-    }
-    void resizeEvent(QResizeEvent *e) override {
-        if (this->client) {
-            this->client->resizeBrowser(this->width(), this->height());
-            return QWidget::resizeEvent(e);
-        }
-    }
-
-  private:
-    CefRefPtr<BrowserHandler> client;
-};
-
-class QCefWidget : public QWidget {
-    Q_OBJECT
-  public:
-    QCefWidget(QWidget *parent = nullptr) : QWidget(parent) {
-        this->setContentsMargins(0, 0, 0, 0);
-        CefBrowserSettings browser_settings;
-        CefWindowInfo window_info;
-        CefRect winRect(0, 0, this->width(), this->height());
-        window_info.SetAsChild((HWND) this->winId(), winRect);
-        const std::string url = "http://www.baidu.com";
-        this->client = new BrowserHandler;
-        CefBrowserHost::CreateBrowser(window_info, this->client, CefString(url), browser_settings,
-                                      nullptr, CefRequestContext::GetGlobalContext());
-    }
-    void resizeEvent(QResizeEvent *e) override {
-        if (this->client) {
-            this->client->resizeBrowser(this->width(), this->height());
-            return QWidget::resizeEvent(e);
-        }
-    }
-
-  private:
-    CefRefPtr<BrowserHandler> client;
-};
-class QCefWidget : public QWidget {
-    Q_OBJECT
-  public:
-    QCefWidget(QWidget *parent = nullptr) : QWidget(parent) {
-        this->setContentsMargins(0, 0, 0, 0);
-        CefBrowserSettings browser_settings;
-        CefWindowInfo window_info;
-        CefRect winRect(0, 0, this->width(), this->height());
-        window_info.SetAsChild((HWND) this->winId(), winRect);
-        const std::string url = "http://www.baidu.com";
+        const std::string url = "http://web/index.html";
         this->client = new BrowserHandler;
         CefBrowserHost::CreateBrowser(window_info, this->client, CefString(url), browser_settings,
                                       nullptr, CefRequestContext::GetGlobalContext());
@@ -180,6 +138,87 @@ class ClientAppRenderer : public CefApp, public CefRenderProcessHandler {
     IMPLEMENT_REFCOUNTING(ClientAppRenderer);
     DISALLOW_COPY_AND_ASSIGN(ClientAppRenderer);
 };
+class QRCResourceHandler : public CefResourceHandler {
+  private:
+    std::string mime_type_;
+    QByteArray data_;
+    int offset_;
+
+  public:
+    QRCResourceHandler() {
+        this->data_ = "";
+        this->offset_ = 0;
+    }
+    bool Open(CefRefPtr<CefRequest> request,
+              bool &handle_request,
+              CefRefPtr<CefCallback> callback) override {
+        CefString method = request->GetMethod();
+        std::string url = request->GetURL().ToString();
+        QStringList url_split = QString::fromStdString(url).split(":");
+        if (url_split.length() == 2) {
+            QFile file(QString(":") + url_split[1]);
+            if (file.exists() && file.open(QIODevice::ReadOnly)) {
+                this->data_ = file.readAll();
+                QMimeDatabase db;
+                this->mime_type_ =
+                  db.mimeTypeForFileNameAndData(file.fileName(), this->data_).name().toStdString();
+                handle_request = true;
+                return true;
+            } else {
+                handle_request = true;
+                return false;
+            }
+        }
+        handle_request = true;
+        return false;
+    }
+    bool Read(void *data_out,
+              int bytes_to_read,
+              int &bytes_read,
+              CefRefPtr<CefResourceReadCallback> callback) {
+        if (offset_ < data_.length()) {
+            int bytes_remain = static_cast<int>(data_.length()) - static_cast<int>(offset_);
+            int transfer_size = bytes_to_read;
+            if (transfer_size > bytes_remain) {
+                transfer_size = bytes_remain;
+            }
+            memcpy(data_out, data_.data() + offset_, transfer_size);
+            bytes_read = transfer_size;
+            offset_ += transfer_size;
+            return true;
+        } else {
+            bytes_read = 0;
+            return false;
+        }
+    }
+    void GetResponseHeaders(CefRefPtr<CefResponse> response,
+                            int64 &response_length,
+                            CefString &redirectUrl) override {
+        response->SetStatus(200);
+        response->SetMimeType(this->mime_type_);
+        response_length = this->data_.length();
+    };
+    virtual void Cancel() override {}
+
+  private:
+    IMPLEMENT_REFCOUNTING(QRCResourceHandler);
+    DISALLOW_COPY_AND_ASSIGN(QRCResourceHandler);
+};
+class QRCSchemeHandlerFactory : public CefSchemeHandlerFactory {
+    CefRefPtr<CefResourceHandler> Create(CefRefPtr<CefBrowser> browser,
+                                         CefRefPtr<CefFrame> frame,
+                                         const CefString &scheme_name,
+                                         CefRefPtr<CefRequest> request) override {
+        return new QRCResourceHandler;
+    }
+
+  public:
+    QRCSchemeHandlerFactory() {}
+
+  private:
+    IMPLEMENT_REFCOUNTING(QRCSchemeHandlerFactory);
+    DISALLOW_COPY_AND_ASSIGN(QRCSchemeHandlerFactory);
+};
 int main(int argc, char **argv) {
     // 所有文件/v8/QString均以utf-8编码
     // 将控制台编码设为utf-8使得向控制台打印消息时不用经过编码转换
@@ -218,6 +257,7 @@ int main(int argc, char **argv) {
     settings.no_sandbox = true;
     settings.multi_threaded_message_loop = true;
     CefInitialize(main_args, settings, nullptr, nullptr);
+    CefRegisterSchemeHandlerFactory("http", "web", new QRCSchemeHandlerFactory());
     QApplication app(argc, argv);
     int r = 0;
     {

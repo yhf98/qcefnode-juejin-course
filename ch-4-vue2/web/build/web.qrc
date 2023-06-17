@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/web">
+        <file>.//static/css/app.30790115300ab27614ce176899523b62.css</file>
+        <file>.//static/js/app.b22ce679862c47a75225.js</file>
+        <file>.//static/js/manifest.2ae2e69a05c33dfc65f8.js</file>
+        <file>.//static/js/vendor.5b49f6026b1701b6bedb.js</file>
+        <file>.//index.html</file>
+        <file>.//static/css/app.30790115300ab27614ce176899523b62.css.map</file>
+        <file>.//static/js/app.b22ce679862c47a75225.js.map</file>
+        <file>.//static/js/manifest.2ae2e69a05c33dfc65f8.js.map</file>
+        <file>.//static/js/vendor.5b49f6026b1701b6bedb.js.map</file>
+    </qresource>
+</RCC>
