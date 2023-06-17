@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <QFile>
 #include <QMimeDatabase>
+
 static std::mutex browserCountMutex;
 static std::condition_variable browserCountCv;
 static int browserCount = 0;
@@ -74,6 +75,7 @@ class BrowserHandler : public QObject,
     IMPLEMENT_REFCOUNTING(BrowserHandler);
     DISALLOW_COPY_AND_ASSIGN(BrowserHandler);
 };
+
 class QCefWidget : public QWidget {
     Q_OBJECT
   public:
@@ -274,6 +276,15 @@ int main(int argc, char **argv) {
             jobCloser = nullptr;
         };
     }
+    {
+        std::unique_lock<std::mutex> locker(browserCountMutex);
+        if (!browserCountCv.wait_for(locker, std::chrono::seconds(2),
+                                     [&]() { return browserCount == 0; })) {
+            // timeout
+            jobCloser = nullptr;
+        };
+    }
+
     CefQuitMessageLoop();
     CefShutdown();
     return r;
